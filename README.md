@@ -64,7 +64,7 @@ A key emergent property of our simple, bias-free design is the learning of a den
 ### 1. Clone & Install Dependencies
 First, clone the repository and install the required packages.
 ```bash
-git clone https://https://github.com/yyfz/Pi3
+git clone https://github.com/yyfz/Pi3.git
 cd Pi3
 pip install -r requirements.txt
 ```
