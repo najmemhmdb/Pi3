@@ -26,7 +26,7 @@
 </div>
 
 <p align="center">
-    <a href="[PAPER_LINK_HERE]" target="_blank">
+    <a href="https://arxiv.org/abs/2507.13347" target="_blank">
     <img src="https://img.shields.io/badge/Paper-00AEEF?style=plastic&logo=arxiv&logoColor=white" alt="Paper">
     </a>
     <a href="https://yyfz.github.io/pi3/" target="_blank">
