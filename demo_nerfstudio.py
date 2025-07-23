@@ -5,6 +5,86 @@ from pi3.utils.geometry import depth_edge
 from pi3.models.pi3 import Pi3
 import os
 from demo_gradio import predictions_to_glb
+import json
+import imageio
+from tqdm import tqdm
+import numpy as np
+
+def save_depth_maps(predictions, output_dir, width=1920, height=1080):
+    os.makedirs(output_dir, exist_ok=True)
+    points = predictions['points']  # (N, H, W, 3)
+    poses = predictions['camera_poses']  # (N, 4, 4)
+
+    fx, fy = predictions['fl_x'], predictions['fl_y']
+    cx, cy = predictions['cx'], predictions['cy']
+
+    K = np.array([
+        [fx, 0, cx],
+        [0, fy, cy],
+        [0,  0,  1]
+    ])
+
+    for i in tqdm(range(len(points))):
+        # Points: (H, W, 3)
+        pts = points[i].reshape(-1, 3)
+        pose = poses[i]  # (4, 4)
+
+        # Transform to camera frame
+        pts_h = np.concatenate([pts, np.ones((pts.shape[0], 1))], axis=-1)
+        cam_pts = (np.linalg.inv(pose) @ pts_h.T).T[:, :3]
+
+        # Filter positive z (visible)
+        valid = cam_pts[:, 2] > 0
+        cam_pts = cam_pts[valid]
+
+        # Project to 2D
+        pix = (K @ cam_pts.T).T
+        pix[:, 0] /= pix[:, 2]
+        pix[:, 1] /= pix[:, 2]
+        pix = pix[:, :2].astype(np.int32)
+        depth = cam_pts[:, 2]
+
+        # Create empty depth map
+        depth_map = np.zeros((height, width), dtype=np.float32)
+
+        # Fill depth values (use z-buffering)
+        for (u, v), d in zip(pix, depth):
+            if 0 <= u < width and 0 <= v < height:
+                if depth_map[v, u] == 0 or d < depth_map[v, u]:
+                    depth_map[v, u] = d
+
+        # Save depth map
+        depth_path = os.path.join(output_dir, f"{i:03d}.png")
+        imageio.imwrite(depth_path, (depth_map * 1000).astype(np.uint16))  # scale to mm
+
+def save_json(predictions, path):
+    predictions['fl_x'], predictions['fl_y'] = 1236.78, 1201.39
+    predictions['cx'], predictions['cy'] = 971.40, 565.10
+    predictions['k1'], predictions['k2'], predictions['p1'], predictions['p2'], predictions['k3'] = 0.0220, -0.0323, 0.0055, 0.0037, 0.0139
+    output = {"frames": []}
+
+    for i in range(len(predictions['points'])):
+        frame = {}
+        frame['file_path'] = f"camera/{i:03}.jpg"
+        frame['transform_matrix'] = predictions['camera_poses'][i].tolist()
+        frame['w'] = 1920
+        frame['h'] = 1080
+        frame['fl_x'] = predictions['fl_x']
+        frame['fl_y'] = predictions['fl_y']
+        frame['cx'] = predictions['cx']
+        frame['cy'] = predictions['cy']
+        frame['k1'] = predictions['k1']
+        frame['k2'] = predictions['k2']
+        frame['p1'] = predictions['p1']
+        frame['p2'] = predictions['p2']
+        frame['k3'] = predictions['k3']
+        frame['camera_model'] = "OPENCV"
+        output['frames'].append(frame)
+
+
+    with open(path, 'w') as f:
+        json.dump(output, f, indent=4)
+    return predictions
 
 if __name__ == '__main__':
     # --- Argument Parsing ---
@@ -54,7 +134,7 @@ if __name__ == '__main__':
     dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
     with torch.no_grad():
         with torch.amp.autocast('cuda', dtype=dtype):
-            predictions = model(imgs[None]) # Add batch dimension
+            predictions = model(imgs[None]) # Add batch dimensionx
 
 
     predictions['images'] = imgs[None].permute(0, 1, 3, 4, 2)
@@ -77,6 +157,9 @@ if __name__ == '__main__':
         f"glbscene.glb",
     )
 
+    # save predicitons as transforms.json 
+    predictions = save_json(predictions, "/mnt/public/Ehsan/datasets/private/Najmeh/real_data/kashiwa/output_processed/transforms.json")
+    save_depth_maps(predictions, output_dir="/mnt/public/Ehsan/datasets/private/Najmeh/real_data/kashiwa/output_processed/depths")
     # Convert predictions to GLB
     glbscene = predictions_to_glb(
         predictions,
