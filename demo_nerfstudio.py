@@ -9,6 +9,40 @@ import json
 import imageio
 from tqdm import tqdm
 import numpy as np
+from scipy.spatial.transform import Rotation as R
+
+
+def save_camera_poses_as_quaternion(predictions, output_path):
+    poses = predictions['camera_poses']  # (N, 4, 4)
+    camera_list = []
+
+    for pose in poses:
+        # Extract translation
+        t = pose[:3, 3]
+        position = {
+            "x": float(t[0]),
+            "y": float(t[1]),
+            "z": float(t[2])
+        }
+
+        # Extract rotation matrix and convert to quaternion
+        R_mat = pose[:3, :3]
+        quat = R.from_matrix(R_mat).as_quat()  # [x, y, z, w]
+        heading = {
+            "x": float(quat[0]),
+            "y": float(quat[1]),
+            "z": float(quat[2]),
+            "w": float(quat[3])
+        }
+
+        camera_list.append({
+            "position": position,
+            "heading": heading
+        })
+
+    with open(output_path, 'w') as f:
+        json.dump(camera_list, f, indent=4)
+
 
 def save_depth_maps(predictions, output_dir, width=1920, height=1080):
     os.makedirs(output_dir, exist_ok=True)
@@ -90,9 +124,9 @@ if __name__ == '__main__':
     # --- Argument Parsing ---
     parser = argparse.ArgumentParser(description="Run inference with the Pi3 model.")
     
-    parser.add_argument("--data_path", type=str, default='/mnt/public/Ehsan/datasets/private/Najmeh/real_data/kashiwa/output_processed/camera',
+    parser.add_argument("--data_path", type=str, default='/mnt/public/Ehsan/datasets/private/Najmeh/simulated_data/simulated_pandaset_V5_large/001/camera/front_camera',
                         help="Path to the input image directory or a video file.")
-    parser.add_argument("--save_path", type=str, default='examples/result.ply',
+    parser.add_argument("--save_path", type=str, default='./outputs/simulated_pandaset_V5_large/001/front_camera',
                         help="Path to save the output .ply file.")
     parser.add_argument("--interval", type=int, default=-1,
                         help="Interval to sample image. Default: 1 for images dir, 10 for video")
@@ -127,9 +161,13 @@ if __name__ == '__main__':
 
     # 2. Prepare input data
     # The load_images_as_tensor function will print the loading path
+
     imgs = load_images_as_tensor(args.data_path, interval=args.interval).to(device) # (N, 3, H, W)
-    print(imgs.shape)
-    # 3. Infer
+    imgs = imgs[:10]
+    # 3. create output directory
+    os.makedirs(args.save_path, exist_ok=True)
+
+    # 4. Infer
     print("Running model inference...")
     dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
     with torch.no_grad():
@@ -151,15 +189,20 @@ if __name__ == '__main__':
     for key in predictions.keys():
         if isinstance(predictions[key], torch.Tensor):
             predictions[key] = predictions[key].cpu().numpy().squeeze(0)  # remove batch dimension
+    print(predictions['camera_poses'][:3])
+    print(predictions['points'].shape)
+    print(predictions['conf'].shape)
+    exit(0)
+    save_camera_poses_as_quaternion(predictions, os.path.join(args.save_path, "poses.json"))
 
     glbfile = os.path.join(
-        "./",
+        args.save_path,
         f"glbscene.glb",
     )
 
     # save predicitons as transforms.json 
-    predictions = save_json(predictions, "/mnt/public/Ehsan/datasets/private/Najmeh/real_data/kashiwa/output_processed/transforms.json")
-    save_depth_maps(predictions, output_dir="/mnt/public/Ehsan/datasets/private/Najmeh/real_data/kashiwa/output_processed/depths")
+    # predictions = save_json(predictions, "/mnt/public/Ehsan/datasets/private/Najmeh/real_data/kashiwa/output_processed/transforms.json")
+    # save_depth_maps(predictions, output_dir="/mnt/public/Ehsan/datasets/private/Najmeh/real_data/kashiwa/output_processed/depths")
     # Convert predictions to GLB
     glbscene = predictions_to_glb(
         predictions,

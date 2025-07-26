@@ -8,7 +8,7 @@ from torchvision import transforms
 from plyfile import PlyData, PlyElement
 import numpy as np
 
-def load_images_as_tensor(path='data/truck', interval=1, PIXEL_LIMIT=255000):
+def load_images_as_tensor(path=['data/truck'], interval=1, PIXEL_LIMIT=255000):
     """
     Loads images from a directory or video, resizes them to a uniform size,
     then converts and stacks them into a single [N, 3, H, W] PyTorch tensor.
@@ -16,7 +16,16 @@ def load_images_as_tensor(path='data/truck', interval=1, PIXEL_LIMIT=255000):
     sources = [] 
     
     # --- 1. Load image paths or video frames ---
-    if osp.isdir(path):
+    if type(path) is list:
+        print(f"Loading images from directory: {path}")
+        filenames = path
+        for i in range(0, len(filenames), interval):
+            img_path = filenames[i]
+            try:
+                sources.append(Image.open(img_path).convert('RGB'))
+            except Exception as e:
+                print(f"Could not load image {filenames[i]}: {e}")
+    elif osp.isdir(path):
         print(f"Loading images from directory: {path}")
         filenames = sorted([x for x in os.listdir(path) if x.lower().endswith(('.png', '.jpg', '.jpeg'))])
         for i in range(0, len(filenames), interval):
